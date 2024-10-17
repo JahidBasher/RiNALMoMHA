@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from rinalmo.model.attention import MultiHeadSelfAttention, FlashMultiHeadSelfAttention
+from rinalmo.model.attention import MultiHeadSelfAttention
 
 import torch.utils.checkpoint as checkpoint
 
@@ -18,9 +18,7 @@ class TokenDropout(nn.Module):
         super().__init__()
 
         self.active = active
-
         self.mask_ratio_train = mask_ratio * mask_tkn_prob
-
         self.mask_tkn_idx = mask_tkn_idx
         self.pad_tkn_idx = pad_tkn_idx
 
@@ -38,8 +36,6 @@ class TokenDropout(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, embed_dim, num_blocks, num_heads, use_rot_emb=True, attn_qkv_bias=False, transition_dropout=0.0, attention_dropout=0.0, residual_dropout=0.0, transition_factor=4, use_flash_attn=False):
         super().__init__()
-
-        self.use_flash_attn = use_flash_attn
 
         self.blocks = nn.ModuleList(
             [
@@ -99,14 +95,8 @@ class SwiGLU(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, embed_dim, num_heads, use_rot_emb=True, attn_qkv_bias=False, transition_dropout=0.0, attention_dropout=0.0, residual_dropout=0.0, transition_factor=4, use_flash_attn=False):
         super().__init__()
-        
-        self.use_flash_attn = use_flash_attn
-
-        if use_flash_attn:
-            self.mh_attn = FlashMultiHeadSelfAttention(embed_dim, num_heads, attention_dropout, causal=False, use_rot_emb=use_rot_emb, bias=attn_qkv_bias)
-        else:
-            self.mh_attn = MultiHeadSelfAttention(embed_dim, num_heads, attention_dropout, use_rot_emb, attn_qkv_bias)
-        
+    
+        self.mh_attn = MultiHeadSelfAttention(embed_dim, num_heads, attention_dropout, use_rot_emb, attn_qkv_bias)
         self.attn_layer_norm = nn.LayerNorm(embed_dim)
 
         self.transition = nn.Sequential(
@@ -121,10 +111,7 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x, key_padding_mask=None, need_attn_weights=None):
         x = self.attn_layer_norm(x)
-        if self.use_flash_attn:
-            mh_out, attn = self.mh_attn(x, key_padding_mask=key_padding_mask, return_attn_probs=need_attn_weights)
-        else:
-            mh_out, attn = self.mh_attn(x, attn_mask=None, key_pad_mask=key_padding_mask)
+        mh_out, attn = self.mh_attn(x, attn_mask=None, key_pad_mask=key_padding_mask)
         x = x + self.residual_dropout_1(mh_out)
 
         residual = x
